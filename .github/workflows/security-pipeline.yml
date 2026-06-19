@@ -1,0 +1,71 @@
+name: Container Security Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  static-analysis:
+    name: 1. Static Analysis & Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Essential for Gitleaks to evaluate git commit history
+
+     # Step 1: Secret Scanning via Gitleaks CLI Docker Image (No Token Needed)
+      - name: Scan for Hardcoded Secrets
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/path" zricethezav/gitleaks:latest detect --source="/path" --verbose --redact
+
+      # Step 2: SAST via Semgrep OSS Image
+      # Runs locally within a Docker container to bypass Semgrep Cloud platform mandates
+      - name: Static Application Security Testing (SAST)
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/app" semgrep/semgrep semgrep scan --config=p/python --error
+
+  composition-analysis:
+    name: 2. Software Composition Analysis (SCA)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 3: SCA via Trivy (Scanning the filesystem repository)
+      # This parses PEP 723 inline dependencies directly out of server.py
+      - name: Scan Dependencies for Vulnerabilities (SCA)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+
+  container-security:
+    name: 3. Container Build & Analysis
+    needs: [static-analysis, composition-analysis]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 4: Build the Container Image
+      - name: Build Container Image
+        run: |
+          docker build -t test-workload:local .
+
+      # Step 5: Container Security Analysis via Trivy
+      # Evaluates base OS vulnerabilities, package managers, and Dockerfile misconfigurations
+      - name: Scan Container Image for Vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'test-workload:local'
+          scan-type: 'image'
+          format: 'table'
+          exit-code: '1' # Fails pipeline execution if matching vulnerabilities are discovered
+          ignore-unfixed: true # Suppresses vulnerabilities lacking a vendor patch
+          severity: 'HIGH,CRITICAL'
