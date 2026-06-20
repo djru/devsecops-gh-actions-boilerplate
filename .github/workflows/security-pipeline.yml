@@ -179,6 +179,20 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+          category: 'checkov-compliance'
+
       # Generate the planning graph by translating github.repository metadata lowercase 
       # to prevent string validation errors on capitalized GitHub names.
       - name: Terraform Plan
