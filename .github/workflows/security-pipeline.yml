@@ -55,7 +55,7 @@ jobs:
         if: always()
         with:
           sarif_file: semgrep-results.sarif
-  scan-python-deps:
+  scan-source:
     name: Dependency Scanning
     runs-on: ubuntu-latest
     permissions:
@@ -79,6 +79,21 @@ jobs:
         if: always()
         with:
           sarif_file: trivy-fs-results.sarif
+      
+      - name: Run Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-iac-results.sarif'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Upload Trivy Results to GitHub
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-iac-results.sarif
 
   build-and-scan-container:
     name: Container Build, Security Scan, and Push
@@ -112,7 +127,7 @@ jobs:
 
       # STEP 3: Upload Trivy findings to the Security Tab
       - name: Upload Trivy Image Results to GitHub
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image-results.sarif
@@ -161,9 +176,17 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      # Floci boots in ~24ms, so no complex "wait-for-it" scripts are needed
-      - name: Terraform Plan & Mock Deploy
-        run: terraform plan
+      # Generate the planning graph by translating github.repository metadata lowercase 
+      # to prevent string validation errors on capitalized GitHub names.
+      - name: Terraform Plan
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_URI="${REPO_LOWER}/starlette-app:${{ github.sha }}"
+          terraform plan -var="container_image_tag=${IMAGE_URI}"
 
-      - name: Terraform Apply (Test Run)
-        run: terraform apply -auto-approve
+      # Deploy the ECS Topography into the Floci service layer
+      - name: Terraform Apply
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_URI="${REPO_LOWER}/starlette-app:${{ github.sha }}"
+          terraform apply -auto-approve -var="container_image_tag=${IMAGE_URI}"
