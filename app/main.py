@@ -9,7 +9,9 @@ async def homepage(request):
 async def healthcheck(request):
     return JSONResponse({"status": "OK"})
 
-AWS_SECRET_ACCESS_KEY='wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' # very bad
+# bad
+AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE" 
+AWS_SECRET_ACCESS_KEY = "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"
 
 async def unsafe_bad(request):
     # DANGER: Directly evaluating raw user queries allows Remote Code Execution (RCE)
