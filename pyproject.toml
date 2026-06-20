@@ -1,0 +1,14 @@
+[project]
+name = "fedramp-poc"
+version = "0.1.0"
+description = "FedRAMP Proof of Concept application"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "starlette>=0.37.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

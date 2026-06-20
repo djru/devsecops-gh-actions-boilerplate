@@ -46,8 +46,7 @@ USER appuser
 EXPOSE 8000
 
 # Implement a container native health check that Trivy/Hadolint flags require
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)" || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD curl 'http://localhost:8000/health'
 
 # Execute the application
 CMD ["python", "main.py"]

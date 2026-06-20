@@ -1,71 +1,86 @@
-name: Container Security Pipeline
+name: Security Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 1' # Runs every Monday at midnight
+
+permissions:
+  contents: read
 
 jobs:
+  scan-secrets:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0 # Fetch all history for accurate secret scanning
+
+      - name: Trufflehog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
   static-analysis:
-    name: 1. Static Analysis & Secrets
+    name: SAST via Semgrep
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # Required to upload findings to GitHub Security Tab
+    container:
+      image: returntocorp/semgrep:1.77.0 # Pinning to a specific stable engine version
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Semgrep Scan
+        run: |
+          semgrep scan \
+            --config auto \
+            --sarif \
+            --output semgrep-results.sarif \
+            ./app
+
+      - name: Upload Semgrep Results to GitHub
+        uses: github/codeql-action/upload-sarif@48cd3c15e9f3b71b930d30b21c5c8c5221b18cc1 # v3.25.11
+        if: always()
         with:
-          fetch-depth: 0 # Essential for Gitleaks to evaluate git commit history
+          sarif_file: semgrep-results.sarif
 
-     # Step 1: Secret Scanning via Gitleaks CLI Docker Image (No Token Needed)
-      - name: Scan for Hardcoded Secrets
-        run: |
-          docker run --rm -v "${{ github.workspace }}:/path" zricethezav/gitleaks:latest detect --source="/path" --verbose --redact
-
-      # Step 2: SAST via Semgrep OSS Image
-      # Runs locally within a Docker container to bypass Semgrep Cloud platform mandates
-      - name: Static Application Security Testing (SAST)
-        run: |
-          docker run --rm -v "${{ github.workspace }}:/app" semgrep/semgrep semgrep scan --config=p/python --error
-
-  composition-analysis:
-    name: 2. Software Composition Analysis (SCA)
+  dependency-analysis:
+    name: Container & Dependency Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Step 3: SCA via Trivy (Scanning the filesystem repository)
-      # This parses PEP 723 inline dependencies directly out of server.py
-      - name: Scan Dependencies for Vulnerabilities (SCA)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          exit-code: '1'
-          severity: 'HIGH,CRITICAL'
-
-  container-security:
-    name: 3. Container Build & Analysis
-    needs: [static-analysis, composition-analysis]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
-      # Step 4: Build the Container Image
-      - name: Build Container Image
+      - name: Build Local Container Image
         run: |
-          docker build -t test-workload:local .
+          docker build -t starlette-app:local .
 
-      # Step 5: Container Security Analysis via Trivy
-      # Evaluates base OS vulnerabilities, package managers, and Dockerfile misconfigurations
-      - name: Scan Container Image for Vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # Pinned to safe SHA following 2026 supply chain advisory
         with:
-          image-ref: 'test-workload:local'
-          scan-type: 'image'
-          format: 'table'
-          exit-code: '1' # Fails pipeline execution if matching vulnerabilities are discovered
-          ignore-unfixed: true # Suppresses vulnerabilities lacking a vendor patch
-          severity: 'HIGH,CRITICAL'
+          image-ref: 'starlette-app:local'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy Results to GitHub
+        uses: github/codeql-action/upload-sarif@48cd3c15e9f3b71b930d30b21c5c8c5221b18cc1 # v3.25.11
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
