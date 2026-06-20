@@ -74,11 +74,12 @@ jobs:
           output: 'trivy-fs-results.sarif'
           severity: 'HIGH,CRITICAL'
 
-      - name: Upload Trivy Results to GitHub
+      - name: Upload Trivy Deps Results to GitHub
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-fs-results.sarif
+          category: 'trivy-dependencies'
       
       - name: Run Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -89,11 +90,12 @@ jobs:
           output: 'trivy-iac-results.sarif'
           severity: 'HIGH,CRITICAL'
 
-      - name: Upload Trivy Results to GitHub
+      - name: Upload Trivy IAC Results to GitHub
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-iac-results.sarif
+          category: 'trivy-iac'
 
   build-and-scan-container:
     name: Container Build, Security Scan, and Push
