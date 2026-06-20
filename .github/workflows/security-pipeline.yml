@@ -55,8 +55,32 @@ jobs:
         if: always()
         with:
           sarif_file: semgrep-results.sarif
+  scan-python-deps:
+    name: Dependency Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
 
-  dependency-analysis:
+      - name: Run Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Upload Trivy Results to GitHub
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-fs-results.sarif
+
+  scan-docker-container:
     name: Container & Dependency Scanning
     runs-on: ubuntu-latest
     permissions:
@@ -71,15 +95,15 @@ jobs:
           docker build -t starlette-app:local .
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # Pinned to safe SHA following 2026 supply chain advisory
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'starlette-app:local'
           format: 'sarif'
-          output: 'trivy-results.sarif'
+          output: 'trivy-docker-results.sarif'
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy Results to GitHub
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: trivy-results.sarif
+          sarif_file: trivy-docker-results.sarif
